@@ -26,33 +26,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # 변경된 파일 목록
+          # 변경된 파일 목록 가져오기
           changed_files="${{ steps.changed-files.outputs.all_changed_files }}"
           
-          # 각 파일별로 코드 리뷰
           for file in $changed_files; do
             if [ -f "$file" ]; then
-              # Claude API를 호출하여 코드 리뷰
-              review_comment=$(curl -X POST https://api.anthropic.com/v1/messages \
+              # API 응답을 임시 파일에 저장
+              response=$(curl -X POST https://api.anthropic.com/v1/messages \
                 -H "Content-Type: application/json" \
                 -H "x-api-key: $ANTHROPIC_API_KEY" \
                 -H "anthropic-version: 2023-06-01" \
                 -d "{
-                  \"model\": \"claude-3-sonnet\",
+                  \"model\": \"claude-3-sonnet-20240229\",
                   \"max_tokens\": 1000,
                   \"messages\": [{
                     \"role\": \"user\",
                     \"content\": \"[요청]\n- 한글로 리뷰\n-불필요한 로직이나 문제가 생길 수 있는 부분 체크\n-개선할 수 있는 부분에 대한 의견\n-그 외 전반적 조언\n:\n\n$(cat $file)\"
                   }]
-                }" | jq -r '.content[0].text')
+                }")
+              
+              # response에서 content 필드를 추출
+              review_comment=$(echo "$response" | jq -r '.messages[0].content[0].text // "No review available"')
               
               # GitHub PR에 코멘트 작성
-              curl -X POST \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-                -d "{
-                  \"body\": \"**Code Review for \`$file\`:**\n\n$review_comment\"
-                }"
+              if [ "$review_comment" != "null" ] && [ "$review_comment" != "" ]; then
+                curl -X POST \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+                  -d "{
+                    \"body\": \"**Code Review for \`$file\`:**\n\n$review_comment\"
+                  }"
+              fi
             fi
           done
