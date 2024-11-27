@@ -1,0 +1,58 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        
+      - name: Review code changes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # 변경된 파일 목록
+          changed_files="${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          # 각 파일별로 코드 리뷰
+          for file in $changed_files; do
+            if [ -f "$file" ]; then
+              # Claude API를 호출하여 코드 리뷰
+              review_comment=$(curl -X POST https://api.anthropic.com/v1/messages \
+                -H "Content-Type: application/json" \
+                -H "x-api-key: $ANTHROPIC_API_KEY" \
+                -H "anthropic-version: 2023-06-01" \
+                -d "{
+                  \"model\": \"claude-3-sonnet\",
+                  \"max_tokens\": 1000,
+                  \"messages\": [{
+                    \"role\": \"user\",
+                    \"content\": \"다음 코드를 리뷰해주세요:\n\n$(cat $file)\"
+                  }]
+                }" | jq -r '.content[0].text')
+              
+              # GitHub PR에 코멘트 작성
+              curl -X POST \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+                -d "{
+                  \"body\": \"**Code Review for \`$file\`:**\n\n$review_comment\"
+                }"
+            fi
+          done
