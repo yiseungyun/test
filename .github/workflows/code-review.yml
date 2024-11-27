@@ -42,7 +42,7 @@ jobs:
                   \"max_tokens\": 1000,
                   \"messages\": [{
                     \"role\": \"user\",
-                    \"content\": \"다음 코드를 리뷰해주세요:\n\n$(cat $file)\"
+                    \"content\": \"[요청]\n- 한글로 리뷰\n-불필요한 로직이나 문제가 생길 수 있는 부분 체크\n-개선할 수 있는 부분에 대한 의견\n-그 외 전반적 조언\n:\n\n$(cat $file)\"
                   }]
                 }" | jq -r '.content[0].text')
               
